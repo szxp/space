@@ -69,6 +69,7 @@ func (s *Server) serveObject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p := filepath.Join(s.conf.DataDir, objPathRel(key))
+	s.conf.Logger.Debug("Open", "path", p)
 	f, err := os.Open(p)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -99,6 +100,7 @@ func (s *Server) serveObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.conf.Logger.Debug("Serve", "path", p)
 	http.ServeContent(w, r, p, fi.ModTime(), f)
 	return
 }

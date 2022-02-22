@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"path/filepath"
 
 	"github.com/hashicorp/go-hclog"
 )
@@ -20,6 +21,7 @@ var buildTime string
 
 const (
 	envHTTPAddr = "SPACE_HTTP_ADDR"
+	envDataDir = "SPACE_DATA_DIR"
 )
 
 func main() {
@@ -41,6 +43,13 @@ func main() {
 
 func initialize(logger hclog.Logger) error {
 	httpAddr := getenv(envHTTPAddr, ":7664")
+
+	dataDir, err := os.UserCacheDir()
+	if err != nil {
+		return err
+	}
+	dataDir = filepath.Join(dataDir, getenv(envDataDir, "space"))
+	logger.Info("Data dir", "path", dataDir)
 
 	handler, err := space.NewServer(space.ServerConfig{
 		Logger: logger.Named("HTTP server"),

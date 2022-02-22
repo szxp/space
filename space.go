@@ -159,27 +159,8 @@ func objKey(r *http.Request) (string, error) {
 	return key, nil
 }
 
-func exists(p string) (bool, error) {
-	_, err := os.Stat(p)
-	if err == nil {
-		return true, nil
-	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return false, err
-}
-
-func isDir(p string) (bool, error) {
-	fileInfo, err := os.Stat(p)
-	if err != nil {
-		return false, err
-	}
-	return fileInfo.IsDir(), nil
-}
-
-func writeFile(name string, r io.Reader) (int64, error) {
-	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, 0754)
+func writeFile(path string, r io.Reader) (int64, error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0754)
 	if err != nil {
 		return 0, err
 	}

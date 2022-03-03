@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/hashicorp/go-hclog"
@@ -23,6 +24,7 @@ const (
 	envHTTPAddr     = "SPACE_HTTP_ADDR"
 	envSourceDir    = "SPACE_SOURCE_DIR"
 	envThumbnailDir = "SPACE_THUMBNAIL_DIR"
+	envAllowedExts  = "SPACE_ALLOWED_EXTS"
 )
 
 func main() {
@@ -52,12 +54,17 @@ func initialize(logger hclog.Logger) error {
 
 	sourceDir := getenv(envSourceDir, filepath.Join(home, ".space/source"))
 	logger.Info("Source dir", "path", sourceDir)
+
 	thumbnailDir := getenv(envThumbnailDir, filepath.Join(home, ".space/thumbnail"))
 	logger.Info("Thumbnail dir", "path", thumbnailDir)
+
+	allowedExts := strings.Split(getenv(envAllowedExts, ".jpeg,.png,.gif,.heif"), ",")
+	logger.Info("Allowed exts", "exts", allowedExts)
 
 	handler, err := space.NewServer(space.ServerConfig{
 		SourceDir:    sourceDir,
 		ThumbnailDir: thumbnailDir,
+		AllowedExts:  allowedExts,
 		Logger:       logger.Named("HTTP server"),
 	})
 	if err != nil {

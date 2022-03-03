@@ -1,6 +1,7 @@
 package space
 
 import (
+	"crypto/md5"
 	"fmt"
 	"io"
 	"mime"
@@ -18,6 +19,7 @@ import (
 type ServerConfig struct {
 	SourceDir    string
 	ThumbnailDir string
+	AllowedExts  []string
 	Logger       hclog.Logger
 }
 
@@ -37,6 +39,7 @@ func NewServer(conf ServerConfig) (*Server, error) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/source/", s.sourceHandler())
+	//mux.Handle("/thumbnail/", s.thumbnailHandler())
 
 	h := http.Handler(mux)
 	h = s.slashRemover(h)
@@ -70,7 +73,7 @@ func removeSourcePrefix(url string) string {
 
 func (s *Server) serveObject(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(removeSourcePrefix(r.URL.Path))
-	err := validateKey(key)
+	err := s.validateKey(key)
 	if err != nil {
 		s.conf.Logger.Error("Invalid key", "error", err)
 		http.Error(w, "Invalid key", http.StatusBadRequest)
@@ -116,7 +119,7 @@ func (s *Server) serveObject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) saveObject(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(removeSourcePrefix(r.URL.Path))
-	err := validateKey(key)
+	err := s.validateKey(key)
 	if err != nil {
 		s.conf.Logger.Error("Invalid key", "error", err)
 		http.Error(w, "Invalid key", http.StatusBadRequest)
@@ -132,8 +135,7 @@ func (s *Server) saveObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.conf.Logger.Debug("Write file", "path", p)
-	_, err = writeFile(p, r.Body)
+	_, err = s.writeFileMD5(p, r.Body)
 	if err != nil {
 		s.conf.Logger.Error("Failed to write file", "path", p, "error", err)
 		http.Error(w, "Error", http.StatusInternalServerError)
@@ -150,7 +152,7 @@ func objPathRel(key string) string {
 
 var objKeyRE *regexp.Regexp = regexp.MustCompile(`^[a-zA-Z0-9/._-]+$`)
 
-func validateKey(key string) error {
+func (s *Server) validateKey(key string) error {
 	if !objKeyRE.Match([]byte(key)) {
 		return fmt.Errorf("invalid key: %v", key)
 	}
@@ -164,16 +166,56 @@ func validateKey(key string) error {
 		return fmt.Errorf("invalid key: %v", key)
 	}
 
+	ext := path.Ext(key)
+	if ext == "" {
+		return fmt.Errorf("no ext: %v", key)
+	}
+
+	validExt := false
+	if len(s.conf.AllowedExts) > 0 {
+		for _, e := range s.conf.AllowedExts {
+			if ext == e {
+				validExt = true
+				break
+			}
+		}
+	}
+	if !validExt {
+		return fmt.Errorf("invalid ext: %v", key)
+	}
+
 	return nil
 }
 
-func writeFile(path string, r io.Reader) (int64, error) {
+func (s *Server) writeFileMD5(path string, r io.Reader) (int64, error) {
+	s.conf.Logger.Debug("Write file", "path", path)
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0754)
 	if err != nil {
 		return 0, err
 	}
 	defer f.Close()
-	return io.Copy(f, r)
+
+	h := md5.New()
+	w := io.MultiWriter(f, h)
+	n, err := io.Copy(w, r)
+	if err != nil {
+		return n, err
+	}
+
+	sum := fmt.Sprintf("%x", h.Sum(nil))
+	pathMD5 := path + ".md5"
+	s.conf.Logger.Debug("Write MD5 file", "path", pathMD5, "md5", sum)
+	fmd5, err := os.OpenFile(pathMD5, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0754)
+	if err != nil {
+		return n, err
+	}
+	defer fmd5.Close()
+
+	_, err = fmd5.Write([]byte(sum))
+	if err != nil {
+		return n, err
+	}
+	return n, nil
 }
 
 func (s *Server) slashRemover(h http.Handler) http.Handler {

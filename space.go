@@ -16,8 +16,9 @@ import (
 )
 
 type ServerConfig struct {
-	DataDir string
-	Logger  hclog.Logger
+	SourceDir    string
+	ThumbnailDir string
+	Logger       hclog.Logger
 }
 
 type Server struct {
@@ -34,7 +35,10 @@ func NewServer(conf ServerConfig) (*Server, error) {
 		conf: &conf,
 	}
 
-	h := s.defaultHandler()
+	mux := http.NewServeMux()
+	mux.Handle("/source/", s.sourceHandler())
+
+	h := http.Handler(mux)
 	h = s.slashRemover(h)
 	s.handler = h
 	return s, nil
@@ -44,7 +48,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
 }
 
-func (s *Server) defaultHandler() http.Handler {
+func (s *Server) sourceHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" || r.Method == "HEAD" {
 			s.serveObject(w, r)
@@ -60,15 +64,20 @@ func (s *Server) defaultHandler() http.Handler {
 	})
 }
 
+func removeSourcePrefix(url string) string {
+	return strings.Replace(url, "/source/", "", 1)
+}
+
 func (s *Server) serveObject(w http.ResponseWriter, r *http.Request) {
-	key, err := objKey(r)
+	key := strings.TrimSpace(removeSourcePrefix(r.URL.Path))
+	err := validateKey(key)
 	if err != nil {
 		s.conf.Logger.Error("Invalid key", "error", err)
 		http.Error(w, "Invalid key", http.StatusBadRequest)
 		return
 	}
 
-	p := filepath.Join(s.conf.DataDir, objPathRel(key))
+	p := filepath.Join(s.conf.SourceDir, objPathRel(key))
 	s.conf.Logger.Debug("Open", "path", p)
 	f, err := os.Open(p)
 	if err != nil {
@@ -106,14 +115,15 @@ func (s *Server) serveObject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) saveObject(w http.ResponseWriter, r *http.Request) {
-	key, err := objKey(r)
+	key := strings.TrimSpace(removeSourcePrefix(r.URL.Path))
+	err := validateKey(key)
 	if err != nil {
 		s.conf.Logger.Error("Invalid key", "error", err)
 		http.Error(w, "Invalid key", http.StatusBadRequest)
 		return
 	}
 
-	p := filepath.Join(s.conf.DataDir, objPathRel(key))
+	p := filepath.Join(s.conf.SourceDir, objPathRel(key))
 	dir := filepath.Dir(p)
 	err = os.MkdirAll(dir, 0754)
 	if err != nil {
@@ -138,25 +148,23 @@ func objPathRel(key string) string {
 	return filepath.FromSlash(key)
 }
 
-var objKeyRE *regexp.Regexp = regexp.MustCompile(`^[a-zA-Z0-9/_.-]+$`)
+var objKeyRE *regexp.Regexp = regexp.MustCompile(`^[a-zA-Z0-9/._-]+$`)
 
-func objKey(r *http.Request) (string, error) {
-	keyOrig := r.URL.Path[1:]
-
-	if !objKeyRE.Match([]byte(keyOrig)) {
-		return "", fmt.Errorf("invalid key: %v", keyOrig)
+func validateKey(key string) error {
+	if !objKeyRE.Match([]byte(key)) {
+		return fmt.Errorf("invalid key: %v", key)
 	}
 
-	key := path.Clean(keyOrig)
-	if key != keyOrig ||
+	keyCopy := key
+	key = path.Clean(keyCopy)
+	if key != keyCopy ||
 		key == "." ||
 		key[0] == '/' ||
 		strings.Contains(key, "..") {
-		return "", fmt.Errorf("invalid key: %v", key)
+		return fmt.Errorf("invalid key: %v", key)
 	}
 
-	key = strings.ToLower(key)
-	return key, nil
+	return nil
 }
 
 func writeFile(path string, r io.Reader) (int64, error) {

@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"syscall"
 	"path/filepath"
+	"syscall"
 
 	"github.com/hashicorp/go-hclog"
 )
@@ -20,8 +20,9 @@ var version string
 var buildTime string
 
 const (
-	envHTTPAddr = "SPACE_HTTP_ADDR"
-	envDataDir = "SPACE_DATA_DIR"
+	envHTTPAddr     = "SPACE_HTTP_ADDR"
+	envSourceDir    = "SPACE_SOURCE_DIR"
+	envThumbnailDir = "SPACE_THUMBNAIL_DIR"
 )
 
 func main() {
@@ -44,15 +45,20 @@ func main() {
 func initialize(logger hclog.Logger) error {
 	httpAddr := getenv(envHTTPAddr, ":7664")
 
-	dataDir, err := os.UserCacheDir()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
-	dataDir = filepath.Join(dataDir, getenv(envDataDir, "space"))
-	logger.Info("Data dir", "path", dataDir)
+
+	sourceDir := getenv(envSourceDir, filepath.Join(home, ".space/source"))
+	logger.Info("Source dir", "path", sourceDir)
+	thumbnailDir := getenv(envThumbnailDir, filepath.Join(home, ".space/thumbnail"))
+	logger.Info("Thumbnail dir", "path", thumbnailDir)
 
 	handler, err := space.NewServer(space.ServerConfig{
-		Logger: logger.Named("HTTP server"),
+		SourceDir:    sourceDir,
+		ThumbnailDir: thumbnailDir,
+		Logger:       logger.Named("HTTP server"),
 	})
 	if err != nil {
 		return err

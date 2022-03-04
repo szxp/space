@@ -1,10 +1,10 @@
 package imagemagick
 
 import (
+	"github.com/szxp/space"
+
 	"fmt"
 	"os/exec"
-	//"strconv"
-	//"strings"
 )
 
 type ImageResizer struct{}
@@ -19,9 +19,13 @@ func (r *ImageResizer) Resize(dst, src string, width, height uint, mode int) err
 	case width == 0 && height > 0:
 		size = fmt.Sprintf("x%d", height)
 	}
-	//if cover {
-	//	size += "^"
-	//}
+
+	switch mode {
+	case space.ResizeModeFill:
+		size += "^"
+	case space.ResizeModeStretch:
+		size += "!"
+	}
 
 	args := []string{
 		// use only the first frame
@@ -35,24 +39,20 @@ func (r *ImageResizer) Resize(dst, src string, width, height uint, mode int) err
 		// removes any ICM, EXIF, IPTC, or other profiles that might be present in the input and aren't needed in the thumbnail.
 		//"+profile", "\"*\"",
 
-		"-quality", "75",
 		"-strip",
+		"-quality", "75",
 	}
 
-	/*
-		if cover {
-			crop := fmt.Sprintf("%dx%d+0+0", width, height)
-			args = append(args,
-				"-gravity", "center",
-				"-crop", crop,
-				"+repage", // completely remove/reset the virtual canvas meta-data from the images.
-			)
-		}
-	*/
+	if mode == space.ResizeModeFill {
+		args = append(args,
+			"-gravity", "center",
+			"-crop", fmt.Sprintf("%dx%d+0+0", width, height),
+			// completely remove/reset the virtual canvas meta-data from the images.
+			"+repage",
+		)
+	}
 
 	args = append(args, dst)
-
-	//fmt.Println(args)
 
 	_, err := exec.Command("convert", args...).Output()
 	if err != nil {

@@ -9,7 +9,7 @@ import (
 
 type ImageResizer struct{}
 
-func (r *ImageResizer) Resize(dst, src string, width, height uint, mode int) error {
+func (r *ImageResizer) Resize(dst, src string, width, height uint64, mode int8) error {
 	var size string
 	switch {
 	case width > 0 && height > 0:
@@ -21,7 +21,7 @@ func (r *ImageResizer) Resize(dst, src string, width, height uint, mode int) err
 	}
 
 	switch mode {
-	case space.ResizeModeFill:
+	case space.ResizeModeCover:
 		size += "^"
 	case space.ResizeModeStretch:
 		size += "!"
@@ -43,7 +43,7 @@ func (r *ImageResizer) Resize(dst, src string, width, height uint, mode int) err
 		"-quality", "75",
 	}
 
-	if mode == space.ResizeModeFill {
+	if mode == space.ResizeModeCover {
 		args = append(args,
 			"-gravity", "center",
 			"-crop", fmt.Sprintf("%dx%d+0+0", width, height),

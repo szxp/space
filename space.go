@@ -1,7 +1,6 @@
 package space
 
 import (
-	"crypto/md5"
 	"fmt"
 	"io"
 	"mime"
@@ -98,7 +97,6 @@ func (s *Server) serveThumbnail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//w.Header().Set("cache-control", "public, max-age=1209600") // 2 Weeks = 1209600 Seconds
-	//w.Header().Set("etag", "\""+md5Hash+"\"")
 
 	if r.Method == "HEAD" {
 		w.Header().Set("content-type", mime.TypeByExtension(filepath.Ext(fi.Name())))
@@ -118,7 +116,7 @@ func (s *Server) thumbnailPath(key string) string {
 
 func (s *Server) openThumbnail(key string) (*os.File, error) {
 	path := s.thumbnailPath(key)
-	s.conf.Logger.Debug("Open", "path", path)
+	s.conf.Logger.Debug("Open thumbnail", "path", path)
 	f, err := os.Open(path)
 	if (err != nil && !os.IsNotExist(err)) || err == nil {
 		return f, err
@@ -136,11 +134,12 @@ func (s *Server) openThumbnail(key string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.conf.Logger.Debug("Open", "path", path)
+	s.conf.Logger.Debug("Open thumbnail", "path", path)
 	return os.Open(path)
 }
 
 func (s *Server) createThumbnail(key, path string) {
+	s.conf.Logger.Debug("Stat thumbnail", "path", path)
 	_, err := os.Stat(path)
 	if err != nil && !os.IsNotExist(err) {
 		s.sendThumbnailResult(key, err)
@@ -152,21 +151,125 @@ func (s *Server) createThumbnail(key, path string) {
 	}
 
 	src := s.sourcePath(key)
+	s.conf.Logger.Debug("Stat source", "path", src)
 	_, err = os.Stat(src)
 	if err != nil {
 		s.sendThumbnailResult(key, err)
 		return
 	}
 
-	err = os.MkdirAll(filepath.Dir(path), 0754)
+	thDir := filepath.Dir(path)
+	s.conf.Logger.Debug("MkDir", "path", thDir)
+	err = os.MkdirAll(thDir, 0754)
 	if err != nil {
 		s.sendThumbnailResult(key, err)
 		return
 	}
 
-	err = s.conf.ImageResizer.Resize(path, src, 600, 0, ResizeModeFit)
+	tc := thumbnailConfig{}
+	err = tc.UnmarshalText(key)
+	if err != nil {
+		s.sendThumbnailResult(key, err)
+		return
+	}
+	if tc.Width == 0 && tc.Height == 0 {
+		tc.Width = 360
+	}
+	s.conf.Logger.Debug("Thumbnail config", "config", tc)
+
+	s.conf.Logger.Debug("Create tmp file")
+	tmpf, err := os.CreateTemp(filepath.Dir(path), "tmp")
+	if err != nil {
+		s.sendThumbnailResult(key, err)
+		return
+	}
+	tmpPath := tmpf.Name()
+	defer func() { os.Remove(tmpPath) }()
+	tmpf.Close()
+
+	s.conf.Logger.Debug("Create tmp thumbnail", "path", tmpPath)
+	err = s.conf.ImageResizer.Resize(tmpPath, src, tc.Width, tc.Height, tc.Mode)
+	if err != nil {
+		s.sendThumbnailResult(key, err)
+		return
+	}
+
+	s.conf.Logger.Debug("Rename tmp thumbnail", "old", tmpPath, "new", path)
+	err = os.Rename(tmpPath, path)
 	s.sendThumbnailResult(key, err)
 	return
+}
+
+type thumbnailConfig struct {
+	Width  uint64
+	Height uint64
+	Mode   int8
+}
+
+func (c *thumbnailConfig) UnmarshalText(s string) error {
+	i := strings.LastIndex(s, "@@")
+	if i == -1 {
+		return nil
+	}
+
+	dot := strings.LastIndex(s, ".")
+	if dot == -1 {
+		dot = len(s)
+	}
+
+	opts := strings.Split(s[i+2:dot], "@")
+	for _, opt := range opts {
+		switch {
+		case len(opt) > 0 && opt[0] == 'w':
+			err := c.parseWidth(opt[1:])
+			if err != nil {
+				return err
+			}
+		case len(opt) > 0 && opt[0] == 'h':
+			err := c.parseHeight(opt[1:])
+			if err != nil {
+				return err
+			}
+		case len(opt) > 0 && opt[0] == 'm':
+			err := c.parseMode(opt[1:])
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (c *thumbnailConfig) parseWidth(s string) error {
+	n, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return err
+	}
+	c.Width = n
+	return nil
+}
+
+func (c *thumbnailConfig) parseHeight(s string) error {
+	n, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return err
+	}
+	c.Height = n
+	return nil
+}
+
+func (c *thumbnailConfig) parseMode(s string) error {
+	if s == "f" {
+		c.Mode = ResizeModeFit
+		return nil
+	} else if s == "c" {
+		c.Mode = ResizeModeCover
+		return nil
+	} else if s == "s" {
+		c.Mode = ResizeModeStretch
+		return nil
+	}
+	return fmt.Errorf("invalid mode: %s", s)
 }
 
 func (s *Server) sendThumbnailResult(key string, err error) {
@@ -203,6 +306,11 @@ func removePrefix(url, prefix string) string {
 }
 
 func (s *Server) sourcePath(key string) string {
+	i := strings.LastIndex(key, "@@")
+	if i != -1 {
+		ext := path.Ext(key)
+		key = key[:i] + ext
+	}
 	return filepath.Join(s.conf.SourceDir, keyFilepath(key))
 }
 
@@ -216,7 +324,7 @@ func (s *Server) serveSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p := s.sourcePath(key)
-	s.conf.Logger.Debug("Open", "path", p)
+	s.conf.Logger.Debug("Open source", "path", p)
 	f, err := os.Open(p)
 	if err != nil && !os.IsNotExist(err) {
 		s.conf.Logger.Error("Failed to open file", "path", p, "error", err)
@@ -237,7 +345,6 @@ func (s *Server) serveSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//w.Header().Set("cache-control", "public, max-age=1209600") // 2 Weeks = 1209600 Seconds
-	//w.Header().Set("etag", "\""+md5Hash+"\"")
 
 	if r.Method == "HEAD" {
 		w.Header().Set("content-type", mime.TypeByExtension(filepath.Ext(p)))
@@ -270,7 +377,7 @@ func (s *Server) saveSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = s.writeFileMD5(p, r.Body)
+	_, err = s.writeFile(p, r.Body)
 	if err != nil {
 		s.conf.Logger.Error("Failed to write file", "path", p, "error", err)
 		http.Error(w, "Error", http.StatusInternalServerError)
@@ -285,7 +392,7 @@ func keyFilepath(key string) string {
 	return filepath.FromSlash(key)
 }
 
-var keyRE *regexp.Regexp = regexp.MustCompile(`^[a-zA-Z0-9/._-]+$`)
+var keyRE *regexp.Regexp = regexp.MustCompile(`^[a-zA-Z0-9./@-]+$`)
 
 func (s *Server) validateKey(key string) error {
 	if !keyRE.Match([]byte(key)) {
@@ -322,7 +429,7 @@ func (s *Server) validateKey(key string) error {
 	return nil
 }
 
-func (s *Server) writeFileMD5(path string, r io.Reader) (int64, error) {
+func (s *Server) writeFile(path string, r io.Reader) (int64, error) {
 	s.conf.Logger.Debug("Write file", "path", path)
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0754)
 	if err != nil {
@@ -330,27 +437,7 @@ func (s *Server) writeFileMD5(path string, r io.Reader) (int64, error) {
 	}
 	defer f.Close()
 
-	h := md5.New()
-	w := io.MultiWriter(f, h)
-	n, err := io.Copy(w, r)
-	if err != nil {
-		return n, err
-	}
-
-	sum := fmt.Sprintf("%x", h.Sum(nil))
-	pathMD5 := path + ".md5"
-	s.conf.Logger.Debug("Write MD5 file", "path", pathMD5, "md5", sum)
-	fmd5, err := os.OpenFile(pathMD5, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0754)
-	if err != nil {
-		return n, err
-	}
-	defer fmd5.Close()
-
-	_, err = fmd5.Write([]byte(sum))
-	if err != nil {
-		return n, err
-	}
-	return n, nil
+	return io.Copy(f, r)
 }
 
 func (s *Server) slashRemover(h http.Handler) http.Handler {

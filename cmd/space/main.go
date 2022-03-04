@@ -2,8 +2,10 @@ package main
 
 import (
 	"github.com/szxp/space"
+	"github.com/szxp/space/imagemagick"
 
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -61,10 +63,17 @@ func initialize(logger hclog.Logger) error {
 	allowedExts := strings.Split(getenv(envAllowedExts, ".jpeg,.png,.gif,.heif"), ",")
 	logger.Info("Allowed exts", "exts", allowedExts)
 
+	imVer, err := imagemagick.Version()
+	if err != nil {
+		return fmt.Errorf("Failed to check Imagemagick version: %w", err)
+	}
+	logger.Info("Imagemagick version", "version", imVer)
+
 	handler, err := space.NewServer(space.ServerConfig{
 		SourceDir:    sourceDir,
 		ThumbnailDir: thumbnailDir,
 		AllowedExts:  allowedExts,
+		ImageResizer: &imagemagick.ImageResizer{},
 		Logger:       logger.Named("HTTP server"),
 	})
 	if err != nil {

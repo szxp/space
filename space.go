@@ -21,6 +21,7 @@ type ServerConfig struct {
 	SourceDir    string
 	ThumbnailDir string
 	AllowedExts  []string
+	ImageResizer ImageResizer
 	Logger       hclog.Logger
 }
 
@@ -150,8 +151,22 @@ func (s *Server) createThumbnail(key, path string) {
 		return
 	}
 
-	err = fmt.Errorf("not implemented")
+	src := s.sourcePath(key)
+	_, err = os.Stat(src)
+	if err != nil {
+		s.sendThumbnailResult(key, err)
+		return
+	}
+
+	err = os.MkdirAll(filepath.Dir(path), 0754)
+	if err != nil {
+		s.sendThumbnailResult(key, err)
+		return
+	}
+
+	err = s.conf.ImageResizer.Resize(path, src, 600, 0, ResizeModeFit)
 	s.sendThumbnailResult(key, err)
+	return
 }
 
 func (s *Server) sendThumbnailResult(key string, err error) {
@@ -187,6 +202,10 @@ func removePrefix(url, prefix string) string {
 	return strings.Replace(url, prefix, "", 1)
 }
 
+func (s *Server) sourcePath(key string) string {
+	return filepath.Join(s.conf.SourceDir, keyFilepath(key))
+}
+
 func (s *Server) serveSource(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(removePrefix(r.URL.Path, "/source/"))
 	err := s.validateKey(key)
@@ -196,7 +215,7 @@ func (s *Server) serveSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := filepath.Join(s.conf.SourceDir, keyFilepath(key))
+	p := s.sourcePath(key)
 	s.conf.Logger.Debug("Open", "path", p)
 	f, err := os.Open(p)
 	if err != nil && !os.IsNotExist(err) {
@@ -242,7 +261,7 @@ func (s *Server) saveSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := filepath.Join(s.conf.SourceDir, keyFilepath(key))
+	p := s.sourcePath(key)
 	dir := filepath.Dir(p)
 	err = os.MkdirAll(dir, 0754)
 	if err != nil {

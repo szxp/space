@@ -30,6 +30,7 @@ const (
 	envAllowedExts  = "SPACE_ALLOWED_EXTS"
 	envDefaultThumbnailWidth = "SPACE_DEFAULT_THUMBNAIL_WIDTH"
 	envAllowedThumbnailSizes = "SPACE_ALLOWED_THUMBNAIL_SIZES"
+	envThumbnailMaxAge = "SPACE_THUMBNAIL_MAX_AGE"
 )
 
 func main() {
@@ -70,12 +71,21 @@ func initialize(logger hclog.Logger) error {
 	if err != nil {
 		return err
 	}
+	logger.Info("Default thumbnail width", "width", defThumbnailWidth)
 
 	allowedThumbnailSizes := make(space.ThumbnailSizes, 0)
 	err = allowedThumbnailSizes.UnmarshalText(getenv(envAllowedThumbnailSizes, "600x,1024x768"))
 	if err != nil {
 		return err
 	}
+	logger.Info("Allowed thumbnail sizes", "sizes", allowedThumbnailSizes)
+
+	// 2 weeks = 1209600 seconds
+	thumbnailMaxAge, err := strconv.ParseInt(getenv(envThumbnailMaxAge, "1209600"), 10, 64)
+	if err != nil {
+		return nil
+	}
+	logger.Info("Thumbnail max age", "age", thumbnailMaxAge)
 
 	imVer, err := imagemagick.Version()
 	if err != nil {
@@ -90,6 +100,7 @@ func initialize(logger hclog.Logger) error {
 		ImageResizer: &imagemagick.ImageResizer{},
 		DefaultThumbnailWidth: defThumbnailWidth,
 		AllowedThumbnailSizes: allowedThumbnailSizes,
+		ThumbnailMaxAge: thumbnailMaxAge,
 		Logger:       logger.Named("httpserver"),
 	})
 	if err != nil {

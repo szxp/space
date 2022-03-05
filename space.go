@@ -23,6 +23,7 @@ type ServerConfig struct {
 	ImageResizer          ImageResizer
 	DefaultThumbnailWidth uint64
 	AllowedThumbnailSizes ThumbnailSizes
+	ThumbnailMaxAge       int64
 	Logger                hclog.Logger
 }
 
@@ -97,7 +98,7 @@ func (s *Server) serveThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//w.Header().Set("cache-control", "public, max-age=1209600") // 2 Weeks = 1209600 Seconds
+	w.Header().Set("cache-control", "public, max-age="+strconv.FormatInt(s.conf.ThumbnailMaxAge, 10))
 
 	if r.Method == "HEAD" {
 		w.Header().Set("content-type", mime.TypeByExtension(filepath.Ext(fi.Name())))

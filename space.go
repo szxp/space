@@ -17,11 +17,13 @@ import (
 )
 
 type ServerConfig struct {
-	SourceDir    string
-	ThumbnailDir string
-	AllowedExts  []string
-	ImageResizer ImageResizer
-	Logger       hclog.Logger
+	SourceDir             string
+	ThumbnailDir          string
+	AllowedExts           []string
+	ImageResizer          ImageResizer
+	DefaultThumbnailWidth uint64
+	AllowedThumbnailSizes ThumbnailSizes
+	Logger                hclog.Logger
 }
 
 type Server struct {
@@ -69,17 +71,16 @@ func (s *Server) thumbnailHandler() http.Handler {
 }
 
 func (s *Server) serveThumbnail(w http.ResponseWriter, r *http.Request) {
-	key := strings.TrimSpace(removePrefix(r.URL.Path, "/thumbnail/"))
-	err := s.validateKey(key)
+	th, err := s.parseThumbnail(r)
 	if err != nil {
-		s.conf.Logger.Error("Invalid key", "error", err)
-		http.Error(w, "Invalid key", http.StatusBadRequest)
+		s.conf.Logger.Error("Invalid thumbnail", "error", err)
+		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
-	f, err := s.openThumbnail(key)
+	f, err := s.openThumbnail(th)
 	if err != nil && !os.IsNotExist(err) {
-		s.conf.Logger.Error("Failed to open thumbnail", "key", key, "error", err)
+		s.conf.Logger.Error("Failed to open thumbnail", "thumbnail", th, "error", err)
 		http.Error(w, "Error", http.StatusInternalServerError)
 		return
 	}
@@ -91,7 +92,7 @@ func (s *Server) serveThumbnail(w http.ResponseWriter, r *http.Request) {
 
 	fi, err := f.Stat()
 	if err != nil {
-		s.conf.Logger.Error("Failed to get file info", "key", key, "error", err)
+		s.conf.Logger.Error("Failed to get file info", "thumbnail", th, "error", err)
 		http.Error(w, "Error", http.StatusInternalServerError)
 		return
 	}
@@ -110,12 +111,137 @@ func (s *Server) serveThumbnail(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
+type ThumbnailSizes []*ThumbnailSize
+
+func (ts *ThumbnailSizes) UnmarshalText(s string) error {
+	for _, sizeStr := range strings.Split(s, ",") {
+		size := &ThumbnailSize{}
+		err := size.UnmarshalText(sizeStr)
+		if err != nil {
+			return err
+		}
+		*ts = append(*ts, size)
+	}
+	return nil
+}
+
+func (ts *ThumbnailSizes) IsValid(w, h uint64) bool {
+	for _, v := range *ts {
+		if v.Width == w && v.Height == h {
+			return true
+		}
+	}
+	return false
+}
+
+type ThumbnailSize struct {
+	Width  uint64
+	Height uint64
+}
+
+func (ts *ThumbnailSize) UnmarshalText(s string) error {
+	a := strings.Split(s, "x")
+	if len(a) != 2 {
+		return fmt.Errorf("invalid size: %s", s)
+	}
+
+	if a[0] != "" {
+		w, err := strconv.ParseUint(a[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid width: %s", s)
+		}
+		ts.Width = w
+	}
+	if a[1] != "" {
+		h, err := strconv.ParseUint(a[1], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid height: %s", s)
+		}
+		ts.Height = h
+	}
+	return nil
+}
+
+type thumbnail struct {
+	Key    string
+	Width  uint64
+	Height uint64
+	Mode   int8
+}
+
+func (s *Server) parseThumbnail(r *http.Request) (*thumbnail, error) {
+	th := &thumbnail{}
+
+	key := removePrefix(r.URL.Path, "/thumbnail/")
+	err := s.validateKey(key)
+	if err != nil {
+		return nil, err
+	}
+	th.Key = key
+
+	q := r.URL.Query()
+
+	w := q.Get("w")
+	if w != "" {
+		width, err := strconv.ParseUint(w, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		th.Width = width
+	}
+
+	h := q.Get("h")
+	if h != "" {
+		height, err := strconv.ParseUint(h, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		th.Height = height
+	}
+
+	m := q.Get("m")
+	if m != "" {
+		switch m {
+		case "1":
+			th.Mode = ResizeModeFit
+		case "2":
+			th.Mode = ResizeModeCover
+		case "3":
+			th.Mode = ResizeModeStretch
+		default:
+			return nil, fmt.Errorf("invalid mode: %s", m)
+		}
+	}
+
+	if (th.Width != 0 || th.Height != 0) &&
+		!s.conf.AllowedThumbnailSizes.IsValid(th.Width, th.Height) {
+		return nil, fmt.Errorf("invalid size: %dx%d", th.Width, th.Height)
+	}
+
+	if th.Width == 0 && th.Height == 0 {
+		th.Width = s.conf.DefaultThumbnailWidth
+	}
+
+	return th, nil
+}
+
+func (th *thumbnail) RelPath() string {
+	dot := strings.LastIndex(th.Key, ".")
+	return fmt.Sprintf("%s-w%d-h%d-m%d%s",
+		th.Key[:dot],
+		th.Width,
+		th.Height,
+		th.Mode,
+		th.Key[dot:],
+	)
+}
+
 func (s *Server) thumbnailPath(key string) string {
 	return filepath.Join(s.conf.ThumbnailDir, keyFilepath(key))
 }
 
-func (s *Server) openThumbnail(key string) (*os.File, error) {
-	path := s.thumbnailPath(key)
+func (s *Server) openThumbnail(th *thumbnail) (*os.File, error) {
+	path := s.thumbnailPath(th.RelPath())
 	s.conf.Logger.Debug("Open thumbnail", "path", path)
 	f, err := os.Open(path)
 	if (err != nil && !os.IsNotExist(err)) || err == nil {
@@ -124,9 +250,9 @@ func (s *Server) openThumbnail(key string) (*os.File, error) {
 
 	s.thumbnailMutex.Lock()
 	ch := make(chan error, 1)
-	s.pendingThumbnails[key] = append(s.pendingThumbnails[key], ch)
-	if len(s.pendingThumbnails[key]) == 1 {
-		go s.createThumbnail(key, path)
+	s.pendingThumbnails[th.Key] = append(s.pendingThumbnails[th.Key], ch)
+	if len(s.pendingThumbnails[th.Key]) == 1 {
+		go s.createThumbnail(th, path)
 	}
 	s.thumbnailMutex.Unlock()
 
@@ -138,23 +264,23 @@ func (s *Server) openThumbnail(key string) (*os.File, error) {
 	return os.Open(path)
 }
 
-func (s *Server) createThumbnail(key, path string) {
+func (s *Server) createThumbnail(th *thumbnail, path string) {
 	s.conf.Logger.Debug("Stat thumbnail", "path", path)
 	_, err := os.Stat(path)
 	if err != nil && !os.IsNotExist(err) {
-		s.sendThumbnailResult(key, err)
+		s.sendThumbnailResult(th.Key, err)
 		return
 	}
 	if err == nil {
-		s.sendThumbnailResult(key, nil)
+		s.sendThumbnailResult(th.Key, nil)
 		return
 	}
 
-	src := s.sourcePath(key)
+	src := s.sourcePath(th.Key)
 	s.conf.Logger.Debug("Stat source", "path", src)
 	_, err = os.Stat(src)
 	if err != nil {
-		s.sendThumbnailResult(key, err)
+		s.sendThumbnailResult(th.Key, err)
 		return
 	}
 
@@ -162,25 +288,14 @@ func (s *Server) createThumbnail(key, path string) {
 	s.conf.Logger.Debug("MkDir", "path", thDir)
 	err = os.MkdirAll(thDir, 0754)
 	if err != nil {
-		s.sendThumbnailResult(key, err)
+		s.sendThumbnailResult(th.Key, err)
 		return
 	}
-
-	tc := thumbnailConfig{}
-	err = tc.UnmarshalText(key)
-	if err != nil {
-		s.sendThumbnailResult(key, err)
-		return
-	}
-	if tc.Width == 0 && tc.Height == 0 {
-		tc.Width = 360
-	}
-	s.conf.Logger.Debug("Thumbnail config", "config", tc)
 
 	s.conf.Logger.Debug("Create tmp file")
 	tmpf, err := os.CreateTemp(filepath.Dir(path), "tmp")
 	if err != nil {
-		s.sendThumbnailResult(key, err)
+		s.sendThumbnailResult(th.Key, err)
 		return
 	}
 	tmpPath := tmpf.Name()
@@ -188,88 +303,16 @@ func (s *Server) createThumbnail(key, path string) {
 	tmpf.Close()
 
 	s.conf.Logger.Debug("Create tmp thumbnail", "path", tmpPath)
-	err = s.conf.ImageResizer.Resize(tmpPath, src, tc.Width, tc.Height, tc.Mode)
+	err = s.conf.ImageResizer.Resize(tmpPath, src, th.Width, th.Height, th.Mode)
 	if err != nil {
-		s.sendThumbnailResult(key, err)
+		s.sendThumbnailResult(th.Key, err)
 		return
 	}
 
 	s.conf.Logger.Debug("Rename tmp thumbnail", "old", tmpPath, "new", path)
 	err = os.Rename(tmpPath, path)
-	s.sendThumbnailResult(key, err)
+	s.sendThumbnailResult(th.Key, err)
 	return
-}
-
-type thumbnailConfig struct {
-	Width  uint64
-	Height uint64
-	Mode   int8
-}
-
-func (c *thumbnailConfig) UnmarshalText(s string) error {
-	i := strings.LastIndex(s, "@@")
-	if i == -1 {
-		return nil
-	}
-
-	dot := strings.LastIndex(s, ".")
-	if dot == -1 {
-		dot = len(s)
-	}
-
-	opts := strings.Split(s[i+2:dot], "@")
-	for _, opt := range opts {
-		switch {
-		case len(opt) > 0 && opt[0] == 'w':
-			err := c.parseWidth(opt[1:])
-			if err != nil {
-				return err
-			}
-		case len(opt) > 0 && opt[0] == 'h':
-			err := c.parseHeight(opt[1:])
-			if err != nil {
-				return err
-			}
-		case len(opt) > 0 && opt[0] == 'm':
-			err := c.parseMode(opt[1:])
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (c *thumbnailConfig) parseWidth(s string) error {
-	n, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		return err
-	}
-	c.Width = n
-	return nil
-}
-
-func (c *thumbnailConfig) parseHeight(s string) error {
-	n, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		return err
-	}
-	c.Height = n
-	return nil
-}
-
-func (c *thumbnailConfig) parseMode(s string) error {
-	if s == "f" {
-		c.Mode = ResizeModeFit
-		return nil
-	} else if s == "c" {
-		c.Mode = ResizeModeCover
-		return nil
-	} else if s == "s" {
-		c.Mode = ResizeModeStretch
-		return nil
-	}
-	return fmt.Errorf("invalid mode: %s", s)
 }
 
 func (s *Server) sendThumbnailResult(key string, err error) {
@@ -392,7 +435,7 @@ func keyFilepath(key string) string {
 	return filepath.FromSlash(key)
 }
 
-var keyRE *regexp.Regexp = regexp.MustCompile(`^[a-zA-Z0-9./@-]+$`)
+var keyRE *regexp.Regexp = regexp.MustCompile(`^[a-zA-Z0-9./-]+$`)
 
 func (s *Server) validateKey(key string) error {
 	if !keyRE.Match([]byte(key)) {

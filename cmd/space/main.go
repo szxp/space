@@ -5,6 +5,7 @@ import (
 	"github.com/szxp/space/imagemagick"
 
 	"context"
+	"strconv"
 	"fmt"
 	"net/http"
 	"os"
@@ -27,6 +28,8 @@ const (
 	envSourceDir    = "SPACE_SOURCE_DIR"
 	envThumbnailDir = "SPACE_THUMBNAIL_DIR"
 	envAllowedExts  = "SPACE_ALLOWED_EXTS"
+	envDefaultThumbnailWidth = "SPACE_DEFAULT_THUMBNAIL_WIDTH"
+	envAllowedThumbnailSizes = "SPACE_ALLOWED_THUMBNAIL_SIZES"
 )
 
 func main() {
@@ -63,6 +66,17 @@ func initialize(logger hclog.Logger) error {
 	allowedExts := strings.Split(getenv(envAllowedExts, ".jpeg,.png,.gif,.heif"), ",")
 	logger.Info("Allowed exts", "exts", allowedExts)
 
+	defThumbnailWidth, err := strconv.ParseUint(getenv(envDefaultThumbnailWidth, "360"), 10, 64)
+	if err != nil {
+		return err
+	}
+
+	allowedThumbnailSizes := make(space.ThumbnailSizes, 0)
+	err = allowedThumbnailSizes.UnmarshalText(getenv(envAllowedThumbnailSizes, "600x,1024x768"))
+	if err != nil {
+		return err
+	}
+
 	imVer, err := imagemagick.Version()
 	if err != nil {
 		return fmt.Errorf("Failed to check Imagemagick version: %w", err)
@@ -74,7 +88,9 @@ func initialize(logger hclog.Logger) error {
 		ThumbnailDir: thumbnailDir,
 		AllowedExts:  allowedExts,
 		ImageResizer: &imagemagick.ImageResizer{},
-		Logger:       logger.Named("HTTP server"),
+		DefaultThumbnailWidth: defThumbnailWidth,
+		AllowedThumbnailSizes: allowedThumbnailSizes,
+		Logger:       logger.Named("httpserver"),
 	})
 	if err != nil {
 		return err

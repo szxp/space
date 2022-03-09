@@ -64,7 +64,7 @@ func initialize(logger hclog.Logger) error {
 	thumbnailDir := getenv(envThumbnailDir, filepath.Join(home, ".space/thumbnail"))
 	logger.Info("Thumbnail dir", "path", thumbnailDir)
 
-	allowedExts := strings.Split(getenv(envAllowedExts, ".jpeg,.png,.gif,.heif"), ",")
+	allowedExts := strings.Split(getenv(envAllowedExts, ".jpg,.jpeg,.png,.gif,.heif"), ",")
 	logger.Info("Allowed exts", "exts", allowedExts)
 
 	defThumbnailWidth, err := strconv.ParseUint(getenv(envDefaultThumbnailWidth, "360"), 10, 64)
@@ -74,7 +74,7 @@ func initialize(logger hclog.Logger) error {
 	logger.Info("Default thumbnail width", "width", defThumbnailWidth)
 
 	allowedThumbnailSizes := make(space.ThumbnailSizes, 0)
-	err = allowedThumbnailSizes.UnmarshalText(getenv(envAllowedThumbnailSizes, "600x,1024x768"))
+	err = allowedThumbnailSizes.UnmarshalText(getenv(envAllowedThumbnailSizes, "600x,360x203,1280x720,1024x768"))
 	if err != nil {
 		return err
 	}

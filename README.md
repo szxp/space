@@ -1,6 +1,7 @@
 # Space
 
-An image server the creates thumbnail on the fly with the specified dimensions.
+An image server that creates thumbnails on the fly 
+with the specified dimensions from the original image.
 The images are stored in the file system.
 
 ## Configure the server modifying the config file

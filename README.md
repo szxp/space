@@ -4,6 +4,8 @@ An image server that creates thumbnails on the fly
 with the specified dimensions from the original image.
 The images are stored in the file system.
 
+The thumbnails are created using imagemagick.
+
 ## Configure the server modifying the config file
 
 Create a new config file based on the [config.toml](config.toml) template
@@ -28,7 +30,7 @@ The general format of the source url is:
 curl -X PUT --data-binary @image.jpg http://localhost:7664/source/path/to/image.jpg
 ```
 
-## Thumbnail with configured default width, aspect ration reserved
+## Thumbnail with configured default width, aspect ration preserved
 
 The general format of the thumbnail url is: 
 `http://localhost:7664/thumbnail/` + `my/path/to/image.jpg`

@@ -5,15 +5,14 @@ import (
 	"github.com/szxp/space/imagemagick"
 
 	"context"
-	"strconv"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 
+	"github.com/BurntSushi/toml"
 	"github.com/hashicorp/go-hclog"
 )
 
@@ -23,17 +22,16 @@ var version string
 // buildTime will be set while building
 var buildTime string
 
-const (
-	envHTTPAddr     = "SPACE_HTTP_ADDR"
-	envSourceDir    = "SPACE_SOURCE_DIR"
-	envThumbnailDir = "SPACE_THUMBNAIL_DIR"
-	envAllowedExts  = "SPACE_ALLOWED_EXTS"
-	envDefaultThumbnailWidth = "SPACE_DEFAULT_THUMBNAIL_WIDTH"
-	envAllowedThumbnailSizes = "SPACE_ALLOWED_THUMBNAIL_SIZES"
-	envThumbnailMaxAge = "SPACE_THUMBNAIL_MAX_AGE"
-)
-
 func main() {
+	var configPath = flag.String("f", "config.toml", "Path to configuration file")
+	flag.Parse()
+	conf, err := readConfig(*configPath)
+	if err != nil {
+		fmt.Println("Reading configuration file failed:", err)
+		os.Exit(1)
+	}
+	fmt.Println(conf)
+
 	logger := hclog.New(&hclog.LoggerOptions{
 		Output:          os.Stdout,
 		Level:           hclog.LevelFromString("DEBUG"),
@@ -42,7 +40,7 @@ func main() {
 
 	logger.Info("Build info", "time", buildTime)
 
-	err := initialize(logger)
+	err = initialize(conf, logger)
 	if err != nil {
 		logger.Error("Failed to initialize. Exit now", "err", err)
 		os.Exit(1)
@@ -50,43 +48,7 @@ func main() {
 	logger.Info("Exit normally")
 }
 
-func initialize(logger hclog.Logger) error {
-	httpAddr := getenv(envHTTPAddr, ":7664")
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	sourceDir := getenv(envSourceDir, filepath.Join(home, ".space/source"))
-	logger.Info("Source dir", "path", sourceDir)
-
-	thumbnailDir := getenv(envThumbnailDir, filepath.Join(home, ".space/thumbnail"))
-	logger.Info("Thumbnail dir", "path", thumbnailDir)
-
-	allowedExts := strings.Split(getenv(envAllowedExts, ".jpg,.jpeg,.png,.gif,.heif"), ",")
-	logger.Info("Allowed exts", "exts", allowedExts)
-
-	defThumbnailWidth, err := strconv.ParseUint(getenv(envDefaultThumbnailWidth, "360"), 10, 64)
-	if err != nil {
-		return err
-	}
-	logger.Info("Default thumbnail width", "width", defThumbnailWidth)
-
-	allowedThumbnailSizes := make(space.ThumbnailSizes, 0)
-	err = allowedThumbnailSizes.UnmarshalText(getenv(envAllowedThumbnailSizes, "600x,360x203,1280x720,1024x768"))
-	if err != nil {
-		return err
-	}
-	logger.Info("Allowed thumbnail sizes", "sizes", allowedThumbnailSizes)
-
-	// 2 weeks = 1209600 seconds
-	thumbnailMaxAge, err := strconv.ParseInt(getenv(envThumbnailMaxAge, "1209600"), 10, 64)
-	if err != nil {
-		return nil
-	}
-	logger.Info("Thumbnail max age", "age", thumbnailMaxAge)
-
+func initialize(conf *config, logger hclog.Logger) error {
 	imVer, err := imagemagick.Version()
 	if err != nil {
 		return fmt.Errorf("Failed to check Imagemagick version: %w", err)
@@ -94,21 +56,21 @@ func initialize(logger hclog.Logger) error {
 	logger.Info("Imagemagick version", "version", imVer)
 
 	handler, err := space.NewServer(space.ServerConfig{
-		SourceDir:    sourceDir,
-		ThumbnailDir: thumbnailDir,
-		AllowedExts:  allowedExts,
-		ImageResizer: &imagemagick.ImageResizer{},
-		DefaultThumbnailWidth: defThumbnailWidth,
-		AllowedThumbnailSizes: allowedThumbnailSizes,
-		ThumbnailMaxAge: thumbnailMaxAge,
-		Logger:       logger.Named("httpserver"),
+		SourceDir:             conf.SourceDir,
+		ThumbnailDir:          conf.ThumbnailDir,
+		AllowedExts:           conf.AllowedExtensions,
+		ImageResizer:          &imagemagick.ImageResizer{},
+		DefaultThumbnailWidth: conf.DefaultThumbnailWidth,
+		AllowedThumbnailSizes: conf.AllowedThumbnailSizes,
+		ThumbnailMaxAge:       conf.ThumbnailMaxAge,
+		Logger:                logger.Named("httpserver"),
 	})
 	if err != nil {
 		return err
 	}
 
 	srv := &http.Server{
-		Addr:    httpAddr,
+		Addr:    conf.HTTPServer.Address,
 		Handler: handler,
 	}
 
@@ -125,6 +87,7 @@ func initialize(logger hclog.Logger) error {
 		close(idleConnsClosed)
 	}()
 
+	logger.Info("Start HTTP server", "address", conf.HTTPServer.Address)
 	err = srv.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
 		return err
@@ -134,10 +97,25 @@ func initialize(logger hclog.Logger) error {
 	return nil
 }
 
-func getenv(key, fallback string) string {
-	value := os.Getenv(key)
-	if len(value) == 0 {
-		return fallback
+func readConfig(path string) (*config, error) {
+	config := &config{}
+	_, err := toml.DecodeFile(path, config)
+	if err != nil {
+		return nil, err
 	}
-	return value
+	return config, nil
+}
+
+type config struct {
+	SourceDir             string
+	ThumbnailDir          string
+	AllowedExtensions     []string
+	DefaultThumbnailWidth uint64
+	AllowedThumbnailSizes space.ThumbnailSizes
+	ThumbnailMaxAge       int64
+	HTTPServer            httpServer
+}
+
+type httpServer struct {
+	Address string
 }

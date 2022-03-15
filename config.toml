@@ -1,0 +1,33 @@
+
+# Source dir stores the original uploaded images.
+sourceDir = "/home/peti/.space/source"
+
+# Thumbnail dir stores every on the fly created thumbnails.
+thumbnailDir = "/home/peti/.space/thumbnail"
+
+# The allowed image extensions that can be stored or fetched.
+allowedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".heif"]
+
+# Default thumbnail width if the request does not specify a dimension.
+# The aspect ratio of the image will be preserved.
+defaultThumbnailWidth = 360
+
+# The allowed thumbnail dimensions. The zero value means an unspecified value.
+allowedThumbnailSizes = [
+	{width = 600,  height = 0},
+	{width = 360,  height = 203},
+	{width = 1280, height = 720},
+	{width = 1024, height = 768}, 
+]
+
+# The value of max age directive in the Cache-Control header.
+# 2 weeks = 1209600 seconds
+thumbnailMaxAge = 1209600 
+
+
+[httpServer]
+
+# The address on which the HTTP server will be listening.
+address = "localhost:7664"
+
+

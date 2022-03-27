@@ -30,11 +30,10 @@ func main() {
 		fmt.Println("Reading configuration file failed:", err)
 		os.Exit(1)
 	}
-	fmt.Println(conf)
 
 	logger := hclog.New(&hclog.LoggerOptions{
 		Output:          os.Stdout,
-		Level:           hclog.LevelFromString("DEBUG"),
+		Level:           hclog.LevelFromString(conf.Log.Level),
 		IncludeLocation: true,
 	}).With("appVersion", version)
 
@@ -114,8 +113,13 @@ type config struct {
 	AllowedThumbnailSizes space.ThumbnailSizes
 	ThumbnailMaxAge       int64
 	HTTPServer            httpServer
+	Log log
 }
 
 type httpServer struct {
 	Address string
+}
+
+type log struct {
+	Level string
 }

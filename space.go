@@ -49,13 +49,26 @@ func NewServer(conf ServerConfig) (*Server, error) {
 	mux.Handle("/source/", s.sourceHandler())
 	mux.Handle("/thumbnail/", s.thumbnailHandler())
 
-	h := http.Handler(mux)
-	h = s.slashRemover(h)
-	s.handler = h
+	s.handler = http.Handler(mux)
 	return s, nil
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("x-frame-options", "deny")
+	w.Header().Set("x-content-type-options", "nosniff")
+	w.Header().Set("content-security-policy", "default-src https: 'self';")
+	w.Header().Set("x-xss-protection", "0")
+
+	// Google treats URLs with trailing slash
+	// and URLs without trailing slash separately and equally.
+	// Prefer non-trailing slash URLs over trailing slash URLs.
+	p := r.URL.Path
+	if p != "/" && p[len(p)-1] == '/' {
+		p = strings.TrimRight(p, "/")
+		http.Redirect(w, r, p, 301)
+		return
+	}
+
 	s.handler.ServeHTTP(w, r)
 }
 
@@ -482,21 +495,6 @@ func (s *Server) writeFile(path string, r io.Reader) (int64, error) {
 	defer f.Close()
 
 	return io.Copy(f, r)
-}
-
-func (s *Server) slashRemover(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Google treats URLs with trailing slash
-		// and URLs without trailing slash separately and equally.
-		// Prefer non-trailing slash URLs over trailing slash URLs.
-		p := r.URL.Path
-		if p != "/" && p[len(p)-1] == '/' {
-			p = strings.TrimRight(p, "/")
-			http.Redirect(w, r, p, 301)
-			return
-		}
-		h.ServeHTTP(w, r)
-	})
 }
 
 const (

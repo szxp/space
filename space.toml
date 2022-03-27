@@ -16,6 +16,7 @@ defaultThumbnailWidth = 360
 allowedThumbnailSizes = [
 	{width = 600,  height = 0},
 	{width = 360,  height = 203},
+	{width = 640,  height = 360},
 	{width = 1280, height = 720},
 	{width = 1024, height = 768}, 
 ]
@@ -31,3 +32,5 @@ thumbnailMaxAge = 1209600
 address = "localhost:7664"
 
 
+[log]
+level = "DEBUG"

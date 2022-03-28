@@ -58,7 +58,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("x-content-type-options", "nosniff")
 	w.Header().Set("content-security-policy", "default-src https: 'self';")
 	w.Header().Set("x-xss-protection", "0")
-	w.Header().Set("strict-transport-security": "max-age=31536000; includeSubDomains")
+	w.Header().Set("strict-transport-security", "max-age=31536000; includeSubDomains")
 
 	// Google treats URLs with trailing slash
 	// and URLs without trailing slash separately and equally.

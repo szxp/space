@@ -62,7 +62,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("referrer-policy", "no-referrer")
 	w.Header().Set("permissions-policy", "accelerometer=(), autoplay=(), camera=(), fullscreen=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()")
 	w.Header().Set("cross-origin-opener-policy", "same-origin")
-	w.Header().Set("cross-origin-embedder-policy", "require-corp")
 
 	// Google treats URLs with trailing slash
 	// and URLs without trailing slash separately and equally.

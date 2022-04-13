@@ -115,7 +115,7 @@ func (s *Server) serveThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("cache-control", "public, max-age="+strconv.FormatInt(s.conf.ThumbnailMaxAge, 10))
+	w.Header().Set("cache-control", "public, max-age="+strconv.FormatInt(s.conf.ThumbnailMaxAge, 10)+", immutable")
 
 	if r.Method == "HEAD" {
 		w.Header().Set("content-type", mime.TypeByExtension(filepath.Ext(fi.Name())))
@@ -405,7 +405,7 @@ func (s *Server) serveSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//w.Header().Set("cache-control", "public, max-age=1209600") // 2 Weeks = 1209600 Seconds
+	w.Header().Set("cache-control", "public, max-age=1209600, immutable") // 2 Weeks = 1209600 Seconds
 
 	if r.Method == "HEAD" {
 		w.Header().Set("content-type", mime.TypeByExtension(filepath.Ext(p)))

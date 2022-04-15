@@ -61,7 +61,8 @@ func initialize(conf *config, logger hclog.Logger) error {
 		ImageResizer:          &imagemagick.ImageResizer{},
 		DefaultThumbnailWidth: conf.DefaultThumbnailWidth,
 		AllowedThumbnailSizes: conf.AllowedThumbnailSizes,
-		ThumbnailMaxAge:       conf.ThumbnailMaxAge,
+		AllowedHosts:          conf.HTTPServer.AllowedHosts,
+		ThumbnailMaxAge:       conf.HTTPServer.ThumbnailMaxAge,
 		Logger:                logger.Named("httpserver"),
 	})
 	if err != nil {
@@ -111,13 +112,14 @@ type config struct {
 	AllowedExtensions     []string
 	DefaultThumbnailWidth uint64
 	AllowedThumbnailSizes space.ThumbnailSizes
-	ThumbnailMaxAge       int64
 	HTTPServer            httpServer
-	Log log
+	Log                   log
 }
 
 type httpServer struct {
-	Address string
+	Address         string
+	AllowedHosts    []string
+	ThumbnailMaxAge int64
 }
 
 type log struct {

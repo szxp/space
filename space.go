@@ -23,6 +23,7 @@ type ServerConfig struct {
 	ImageResizer          ImageResizer
 	DefaultThumbnailWidth uint64
 	AllowedThumbnailSizes ThumbnailSizes
+	AllowedHosts          []string
 	ThumbnailMaxAge       int64
 	Logger                hclog.Logger
 }
@@ -54,6 +55,13 @@ func NewServer(conf ServerConfig) (*Server, error) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !s.isHostAllowed(r.Host) {
+		s.conf.Logger.Error("Invalid host header", "host", r.Host)
+		r.Close = true
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("x-frame-options", "deny")
 	w.Header().Set("x-content-type-options", "nosniff")
 	w.Header().Set("content-security-policy", "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self';")
@@ -74,6 +82,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.handler.ServeHTTP(w, r)
+}
+
+func (s *Server) isHostAllowed(host string) bool {
+	for _, allowedHost := range s.conf.AllowedHosts {
+		if allowedHost == host {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) thumbnailHandler() http.Handler {

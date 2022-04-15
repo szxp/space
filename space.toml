@@ -21,15 +21,20 @@ allowedThumbnailSizes = [
 	{width = 1024, height = 768}, 
 ]
 
+
+[httpServer]
+# The address on which the HTTP server will be listening.
+address = "localhost:7664"
+
+# Allowed values of the Host HTTP header in requests.
+# This helps prevent DNS rebinding attacks.
+allowedHosts = [
+	"127.0.0.1:7664"
+]
+
 # The value of max age directive in the Cache-Control header.
 # 2 weeks = 1209600 seconds
 thumbnailMaxAge = 1209600 
-
-
-[httpServer]
-
-# The address on which the HTTP server will be listening.
-address = "localhost:7664"
 
 
 [log]

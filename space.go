@@ -66,7 +66,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("x-content-type-options", "nosniff")
 	w.Header().Set("content-security-policy", "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self';")
 	w.Header().Set("x-xss-protection", "0")
-	w.Header().Set("strict-transport-security", "max-age=31536000; includeSubDomains")
+	if r.Host != "localhost" && r.Host != "127.0.0.1" {
+		w.Header().Set("strict-transport-security", "max-age=31536000; includeSubDomains")
+	}
 	w.Header().Set("referrer-policy", "no-referrer")
 	w.Header().Set("permissions-policy", "accelerometer=(), autoplay=(), camera=(), fullscreen=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()")
 	w.Header().Set("cross-origin-opener-policy", "same-origin")

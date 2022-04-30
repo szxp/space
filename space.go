@@ -66,7 +66,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("x-content-type-options", "nosniff")
 	w.Header().Set("content-security-policy", "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self';")
 	w.Header().Set("x-xss-protection", "0")
-	if r.Host != "localhost" && r.Host != "127.0.0.1" {
+	if !isLocalhost(r.Host) {
 		w.Header().Set("strict-transport-security", "max-age=31536000; includeSubDomains")
 	}
 	w.Header().Set("referrer-policy", "no-referrer")
@@ -84,6 +84,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.handler.ServeHTTP(w, r)
+}
+
+func isLocalhost(host string) bool {
+	parts := strings.Split(host, ":")
+	return parts[0] == "localhost" || parts[0] == "127.0.0.1"
 }
 
 func (s *Server) isHostAllowed(host string) bool {
